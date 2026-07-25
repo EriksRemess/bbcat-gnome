@@ -1,0 +1,9 @@
+[submodule "bbcat"]
+	path = components/bbcat
+	url = https://github.com/EriksRemess/bbcat.git
+[submodule "bbcat-gtk"]
+	path = components/bbcat-gtk
+	url = https://github.com/EriksRemess/bbcat-gtk.git
+[submodule "bbcat-sushi"]
+	path = components/bbcat-sushi
+	url = https://github.com/EriksRemess/bbcat-sushi.git

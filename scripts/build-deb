@@ -1,0 +1,156 @@
+#!/bin/sh
+set -eu
+
+project_dir=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
+cd "$project_dir"
+
+for required in \
+    components/bbcat/Cargo.toml \
+    components/bbcat-gtk/Cargo.toml \
+    components/bbcat-sushi/viewers/bbcat.js
+do
+    if [ ! -f "$required" ]; then
+        echo "missing $required; run git submodule update --init --recursive" >&2
+        exit 1
+    fi
+done
+
+base_version=$(tr -d '[:space:]' < VERSION)
+case "$base_version" in
+    ''|*[!0-9.]*)
+        echo "VERSION must contain a dotted numeric version" >&2
+        exit 1
+        ;;
+esac
+
+if git rev-parse --verify HEAD >/dev/null 2>&1; then
+    release_tag=$(git tag --points-at HEAD | sed -n '/^v/ { p; q; }')
+    if [ -n "$release_tag" ]; then
+        if [ "$release_tag" != "v$base_version" ]; then
+            echo "tag $release_tag does not match VERSION $base_version" >&2
+            exit 1
+        fi
+        package_version=$base_version
+    else
+        commit_epoch=$(git show -s --format=%ct HEAD)
+        commit_date=$(date -u -d "@$commit_epoch" +%Y%m%d%H%M%S)
+        commit_short=$(git rev-parse --short=8 HEAD)
+        package_version="${base_version}~git${commit_date}.${commit_short}"
+    fi
+else
+    package_version="${base_version}~uncommitted"
+fi
+
+architecture=${DEB_ARCHITECTURE:-$(dpkg --print-architecture)}
+cargo=${CARGO:-cargo}
+strip=${STRIP:-strip}
+
+mkdir -p dist target
+
+CARGO_TARGET_DIR="$project_dir/target/bbcat" \
+    "$cargo" build --manifest-path components/bbcat/Cargo.toml \
+    --release --locked
+CARGO_TARGET_DIR="$project_dir/target/bbcat-gtk" \
+    "$cargo" build --manifest-path components/bbcat-gtk/Cargo.toml \
+    --release --locked
+
+work_dir=$(mktemp -d "${TMPDIR:-/tmp}/bbcat-gnome-deb.XXXXXX")
+trap 'rm -rf "$work_dir"' EXIT HUP INT TERM
+package_root="$work_dir/root"
+doc_dir="$package_root/usr/share/doc/bbcat-gnome"
+
+install -Dm755 target/bbcat/release/bbcat \
+    "$package_root/usr/bin/bbcat"
+install -Dm755 target/bbcat-gtk/release/bbcat-gtk \
+    "$package_root/usr/bin/bbcat-gtk"
+install -Dm644 components/bbcat-gtk/dev.bbcat.GtkViewer.desktop \
+    "$package_root/usr/share/applications/dev.bbcat.GtkViewer.desktop"
+install -Dm644 components/bbcat-gtk/dev.bbcat.GtkViewer.svg \
+    "$package_root/usr/share/icons/hicolor/scalable/apps/dev.bbcat.GtkViewer.svg"
+install -Dm644 components/bbcat-gtk/bbcat.xml \
+    "$package_root/usr/share/mime/packages/bbcat.xml"
+
+# Sushi extends its built-in `imports.viewers` package through GJS's normal
+# system module path. User and Flatpak installs use bbcat-sushi's own installer.
+install -Dm644 components/bbcat-sushi/viewers/bbcat.js \
+    "$package_root/usr/share/gjs-1.0/viewers/bbcat.js"
+install -Dm644 docs/bbcat.1 \
+    "$package_root/usr/share/man/man1/bbcat.1"
+install -Dm644 docs/bbcat-gtk.1 \
+    "$package_root/usr/share/man/man1/bbcat-gtk.1"
+gzip -9n "$package_root/usr/share/man/man1/bbcat.1"
+gzip -9n "$package_root/usr/share/man/man1/bbcat-gtk.1"
+
+install -Dm644 README.md "$doc_dir/README.md"
+install -Dm644 components/bbcat/THIRD_PARTY_LICENSES \
+    "$doc_dir/bbcat-THIRD_PARTY_LICENSES"
+install -Dm644 components/bbcat-sushi/LICENSE \
+    "$doc_dir/bbcat-sushi-LICENSE"
+
+{
+    echo "bbcat-gnome combines separately maintained bbcat components."
+    echo
+    echo "bbcat license:"
+    echo
+    cat components/bbcat/LICENSE
+    echo
+    echo "bbcat-sushi license:"
+    echo
+    cat components/bbcat-sushi/LICENSE
+    echo
+    echo "On Debian systems, the complete GNU GPL version 2 text is in"
+    echo "/usr/share/common-licenses/GPL-2."
+} > "$doc_dir/copyright"
+chmod 644 "$doc_dir/copyright"
+
+changelog_date=$(date --rfc-email)
+{
+    echo "bbcat-gnome ($package_version) unstable; urgency=medium"
+    echo
+    echo "  * Build the pinned bbcat, bbcat-gtk, and bbcat-sushi revisions."
+    echo
+    echo " -- Ēriks Remess <eriks@remess.lv>  $changelog_date"
+} > "$doc_dir/changelog"
+gzip -9n "$doc_dir/changelog"
+chmod 644 "$doc_dir/changelog.gz"
+
+"$strip" --strip-unneeded "$package_root/usr/bin/bbcat"
+"$strip" --strip-unneeded "$package_root/usr/bin/bbcat-gtk"
+
+mkdir -p "$package_root/DEBIAN" "$work_dir/debian"
+chmod 755 "$package_root" "$package_root/DEBIAN"
+
+cat > "$work_dir/debian/control" <<EOF
+Source: bbcat-gnome
+Package: bbcat-gnome
+Architecture: any
+EOF
+
+dependencies=$(
+    cd "$work_dir"
+    dpkg-shlibdeps -O root/usr/bin/bbcat root/usr/bin/bbcat-gtk |
+        sed 's/^shlibs:Depends=//'
+)
+installed_size=$(du -sk "$package_root/usr" | cut -f1)
+
+cat > "$package_root/DEBIAN/control" <<EOF
+Package: bbcat-gnome
+Version: $package_version
+Section: gnome
+Priority: optional
+Architecture: $architecture
+Maintainer: Ēriks Remess <eriks@remess.lv>
+Installed-Size: $installed_size
+Depends: $dependencies, gnome-sushi (>= 46), shared-mime-info
+Provides: bbcat, bbcat-gtk, bbcat-sushi
+Conflicts: bbcat, bbcat-gtk, bbcat-sushi
+Replaces: bbcat, bbcat-gtk, bbcat-sushi
+Homepage: https://github.com/EriksRemess/bbcat-gnome
+Description: ANSI and BBS art integration for GNOME
+ Includes the bbcat command-line viewer and image exporter, the GTK4 desktop
+ viewer, and a GNOME Sushi plugin for Space-bar previews in Files.
+EOF
+
+output="dist/bbcat-gnome_${package_version}_${architecture}.deb"
+dpkg-deb --root-owner-group --build "$package_root" "$output"
+echo "$output"

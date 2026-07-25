@@ -1,0 +1,71 @@
+.TH BBCAT 1 "July 2026" "bbcat-gnome" "User Commands"
+.SH NAME
+bbcat \- render ANSI and BBS artwork
+.SH SYNOPSIS
+.B bbcat
+.RI [ OPTIONS ]
+.RI [ FILE ...]
+.SH DESCRIPTION
+.B bbcat
+renders character art in the terminal, plays terminal animation, or writes
+Kitty, PNG, APNG, and GIF images.
+Input may be an artwork file, a ZIP art pack, or
+.B \-
+for standard input.
+.SH OPTIONS
+.TP
+.BR \-w ", " \-\-width " " COLS
+Override the text width.
+.TP
+.BR \-\-chunk-lines " " ROWS
+Set the Kitty image height.
+.TP
+.B \-\-kitty
+Use Kitty graphics instead of UTF-8 text.
+.TP
+.B \-\-fit
+Scale complete Kitty art to terminal width instead of cropping.
+.TP
+.B \-\-slow
+Reveal character art one row at a time.
+.TP
+.BR \-\-delay " " MS
+Set the slow-mode row delay.
+.TP
+.BR \-\-baud " " RATE
+Set animation or static row-reveal speed.
+.TP
+.B \-\-2x
+Double Kitty or image output dimensions.
+.TP
+.B \-\-sauce
+Show a SAUCE caption below the artwork.
+.TP
+.BR \-o ", " \-\-output " " FILE
+Write a PNG file, or
+.B \-
+for standard output.
+.TP
+.BR \-\-apng " " FILE
+Write an animated PNG.
+.TP
+.BR \-\-gif " " FILE
+Write an animated GIF.
+.TP
+.B \-\-asciimation
+Play a 13-row asciimation.co.nz frame stream.
+.TP
+.BR \-h ", " \-\-help
+Show command help.
+.TP
+.BR \-V ", " \-\-version
+Show the version.
+.SH EXAMPLES
+.TP
+.B bbcat artwork.ans
+Render artwork in the terminal.
+.TP
+.B bbcat --output artwork.png artwork.ans
+Export artwork as PNG.
+.SH HOMEPAGE
+https://bbcat.dev/
