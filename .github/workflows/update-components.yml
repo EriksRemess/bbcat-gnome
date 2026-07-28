@@ -1,0 +1,99 @@
+name: Update components
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: update-components
+  cancel-in-progress: true
+
+jobs:
+  update:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Update release pins
+        run: ./scripts/update-components
+
+      - name: Check for updates
+        id: changes
+        run: |
+          if git diff --quiet -- \
+            components/bbcat \
+            components/bbcat-gtk \
+            components/bbcat-thumbnailer; then
+            echo "updated=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "updated=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install build dependencies
+        if: steps.changes.outputs.updated == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            desktop-file-utils gjs libgtk-4-dev libxml2-utils pkg-config
+
+      - name: Verify updated components
+        if: steps.changes.outputs.updated == 'true'
+        run: |
+          make check
+          make build
+
+      - name: Open component update pull request
+        if: steps.changes.outputs.updated == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          branch=automation/update-components
+          versions=$(
+            for component in bbcat bbcat-gtk bbcat-thumbnailer; do
+              version=$(sed -n \
+                's/^version = "\([^"]*\)"/\1/p' \
+                "components/$component/Cargo.toml" | head -n 1)
+              printf '%s %s\n' "$component" "$version"
+            done
+          )
+
+          git config user.name "github-actions[bot]"
+          git config user.email \
+            "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$branch"
+          git add \
+            components/bbcat \
+            components/bbcat-gtk \
+            components/bbcat-thumbnailer
+          git commit -m "chore: update bbcat components"
+          git push --force origin "HEAD:refs/heads/$branch"
+
+          body=$(printf \
+            'Automated release-pin update:\n\n```\n%s\n```\n\nVerified with `make check` and `make build`.' \
+            "$versions")
+          pr_number=$(gh pr list \
+            --head "$branch" \
+            --state open \
+            --json number \
+            --jq '.[0].number')
+          if [ -n "$pr_number" ]; then
+            gh api --method PATCH \
+              "repos/$GITHUB_REPOSITORY/pulls/$pr_number" \
+              -f title="chore: update bbcat components" \
+              -f body="$body" >/dev/null
+          else
+            gh pr create \
+              --base main \
+              --head "$branch" \
+              --title "chore: update bbcat components" \
+              --body "$body"
+          fi

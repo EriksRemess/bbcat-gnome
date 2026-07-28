@@ -7,6 +7,7 @@ cd "$project_dir"
 for required in \
     components/bbcat/Cargo.toml \
     components/bbcat-gtk/Cargo.toml \
+    components/bbcat-thumbnailer/Cargo.toml \
     components/bbcat-sushi/viewers/bbcat.js
 do
     if [ ! -f "$required" ]; then
@@ -53,6 +54,9 @@ CARGO_TARGET_DIR="$project_dir/target/bbcat" \
 CARGO_TARGET_DIR="$project_dir/target/bbcat-gtk" \
     "$cargo" build --manifest-path components/bbcat-gtk/Cargo.toml \
     --release --locked
+CARGO_TARGET_DIR="$project_dir/target/bbcat-thumbnailer" \
+    "$cargo" build --manifest-path components/bbcat-thumbnailer/Cargo.toml \
+    --release --locked
 
 work_dir=$(mktemp -d "${TMPDIR:-/tmp}/bbcat-gnome-deb.XXXXXX")
 trap 'rm -rf "$work_dir"' EXIT HUP INT TERM
@@ -63,12 +67,19 @@ install -Dm755 target/bbcat/release/bbcat \
     "$package_root/usr/bin/bbcat"
 install -Dm755 target/bbcat-gtk/release/bbcat-gtk \
     "$package_root/usr/bin/bbcat-gtk"
+install -Dm755 target/bbcat-thumbnailer/release/bbcat-thumbnailer \
+    "$package_root/usr/bin/bbcat-thumbnailer"
 install -Dm644 components/bbcat-gtk/dev.bbcat.GtkViewer.desktop \
     "$package_root/usr/share/applications/dev.bbcat.GtkViewer.desktop"
 install -Dm644 components/bbcat-gtk/dev.bbcat.GtkViewer.svg \
     "$package_root/usr/share/icons/hicolor/scalable/apps/dev.bbcat.GtkViewer.svg"
 install -Dm644 components/bbcat-gtk/bbcat.xml \
     "$package_root/usr/share/mime/packages/bbcat.xml"
+install -d "$package_root/usr/share/thumbnailers"
+sed 's|@BINDIR@|/usr/bin|g' \
+    components/bbcat-thumbnailer/data/bbcat-thumbnailer.thumbnailer.in \
+    > "$package_root/usr/share/thumbnailers/bbcat-thumbnailer.thumbnailer"
+chmod 644 "$package_root/usr/share/thumbnailers/bbcat-thumbnailer.thumbnailer"
 
 # Sushi extends its built-in `imports.viewers` package through GJS's normal
 # system module path. User and Flatpak installs use bbcat-sushi's own installer.
@@ -78,12 +89,19 @@ install -Dm644 docs/bbcat.1 \
     "$package_root/usr/share/man/man1/bbcat.1"
 install -Dm644 docs/bbcat-gtk.1 \
     "$package_root/usr/share/man/man1/bbcat-gtk.1"
+install -Dm644 docs/bbcat-thumbnailer.1 \
+    "$package_root/usr/share/man/man1/bbcat-thumbnailer.1"
 gzip -9n "$package_root/usr/share/man/man1/bbcat.1"
 gzip -9n "$package_root/usr/share/man/man1/bbcat-gtk.1"
+gzip -9n "$package_root/usr/share/man/man1/bbcat-thumbnailer.1"
 
 install -Dm644 README.md "$doc_dir/README.md"
+install -Dm644 components/bbcat-thumbnailer/README.md \
+    "$doc_dir/bbcat-thumbnailer-README.md"
 install -Dm644 components/bbcat/THIRD_PARTY_LICENSES \
     "$doc_dir/bbcat-THIRD_PARTY_LICENSES"
+install -Dm644 components/bbcat-thumbnailer/LICENSE \
+    "$doc_dir/bbcat-thumbnailer-LICENSE"
 install -Dm644 components/bbcat-sushi/LICENSE \
     "$doc_dir/bbcat-sushi-LICENSE"
 
@@ -93,6 +111,10 @@ install -Dm644 components/bbcat-sushi/LICENSE \
     echo "bbcat license:"
     echo
     cat components/bbcat/LICENSE
+    echo
+    echo "bbcat-thumbnailer license:"
+    echo
+    cat components/bbcat-thumbnailer/LICENSE
     echo
     echo "bbcat-sushi license:"
     echo
@@ -107,7 +129,8 @@ changelog_date=$(date --rfc-email)
 {
     echo "bbcat-gnome ($package_version) unstable; urgency=medium"
     echo
-    echo "  * Build the pinned bbcat, bbcat-gtk, and bbcat-sushi revisions."
+    echo "  * Build the pinned bbcat, bbcat-gtk, bbcat-thumbnailer, and"
+    echo "    bbcat-sushi revisions."
     echo
     echo " -- Ēriks Remess <eriks@remess.lv>  $changelog_date"
 } > "$doc_dir/changelog"
@@ -116,6 +139,7 @@ chmod 644 "$doc_dir/changelog.gz"
 
 "$strip" --strip-unneeded "$package_root/usr/bin/bbcat"
 "$strip" --strip-unneeded "$package_root/usr/bin/bbcat-gtk"
+"$strip" --strip-unneeded "$package_root/usr/bin/bbcat-thumbnailer"
 
 mkdir -p "$package_root/DEBIAN" "$work_dir/debian"
 chmod 755 "$package_root" "$package_root/DEBIAN"
@@ -128,7 +152,8 @@ EOF
 
 dependencies=$(
     cd "$work_dir"
-    dpkg-shlibdeps -O root/usr/bin/bbcat root/usr/bin/bbcat-gtk |
+    dpkg-shlibdeps -O root/usr/bin/bbcat root/usr/bin/bbcat-gtk \
+        root/usr/bin/bbcat-thumbnailer |
         sed 's/^shlibs:Depends=//'
 )
 installed_size=$(du -sk "$package_root/usr" | cut -f1)
@@ -142,13 +167,14 @@ Architecture: $architecture
 Maintainer: Ēriks Remess <eriks@remess.lv>
 Installed-Size: $installed_size
 Depends: $dependencies, gnome-sushi (>= 46), shared-mime-info
-Provides: bbcat, bbcat-gtk, bbcat-sushi
-Conflicts: bbcat, bbcat-gtk, bbcat-sushi
-Replaces: bbcat, bbcat-gtk, bbcat-sushi
+Provides: bbcat, bbcat-gtk, bbcat-thumbnailer, bbcat-sushi
+Conflicts: bbcat, bbcat-gtk, bbcat-thumbnailer, bbcat-sushi
+Replaces: bbcat, bbcat-gtk, bbcat-thumbnailer, bbcat-sushi
 Homepage: https://github.com/EriksRemess/bbcat-gnome
 Description: ANSI and BBS art integration for GNOME
  Includes the bbcat command-line viewer and image exporter, the GTK4 desktop
- viewer, and a GNOME Sushi plugin for Space-bar previews in Files.
+ viewer, artwork thumbnails in Files, and a GNOME Sushi plugin for Space-bar
+ previews.
 EOF
 
 output="dist/bbcat-gnome_${package_version}_${architecture}.deb"

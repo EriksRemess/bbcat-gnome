@@ -1,0 +1,58 @@
+#!/bin/sh
+set -eu
+
+project_dir=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
+cd "$project_dir"
+
+components='
+bbcat
+bbcat-gtk
+bbcat-thumbnailer
+'
+
+git submodule sync --recursive
+
+for component in $components
+do
+    path="components/$component"
+    if git -C "$path" rev-parse --git-dir >/dev/null 2>&1 &&
+        [ -n "$(git -C "$path" status --porcelain)" ]; then
+        echo "$component: submodule has uncommitted changes" >&2
+        exit 1
+    fi
+done
+
+git submodule update --init --recursive
+
+for component in $components
+do
+    path="components/$component"
+    url=$(git config -f .gitmodules --get "submodule.$component.url")
+    latest_tag=$(
+        git ls-remote --tags --refs "$url" 'v[0-9]*' |
+            sed -n \
+                's|.*refs/tags/\(v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)$|\1|p' |
+            sort -V |
+            tail -n 1
+    )
+
+    if [ -z "$latest_tag" ]; then
+        echo "$component: no release tags found at $url" >&2
+        exit 1
+    fi
+
+    git -C "$path" fetch --force origin \
+        "refs/tags/$latest_tag:refs/tags/$latest_tag"
+    manifest_version=$(
+        git -C "$path" show "$latest_tag:Cargo.toml" |
+            sed -n 's/^version = "\([^"]*\)"/\1/p' |
+            head -n 1
+    )
+    if [ "v$manifest_version" != "$latest_tag" ]; then
+        echo "$component: $latest_tag contains version $manifest_version" >&2
+        exit 1
+    fi
+
+    git -C "$path" checkout --detach "$latest_tag"
+    printf '%s: %s\n' "$component" "$latest_tag"
+done

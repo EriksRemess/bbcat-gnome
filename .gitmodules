@@ -7,3 +7,6 @@
 [submodule "bbcat-sushi"]
 	path = components/bbcat-sushi
 	url = https://github.com/EriksRemess/bbcat-sushi.git
+[submodule "bbcat-thumbnailer"]
+	path = components/bbcat-thumbnailer
+	url = https://github.com/EriksRemess/bbcat-thumbnailer.git
