@@ -7,6 +7,7 @@ cd "$project_dir"
 components='
 bbcat
 bbcat-gtk
+bbcat-sushi
 bbcat-thumbnailer
 '
 
@@ -43,11 +44,15 @@ do
 
     git -C "$path" fetch --force origin \
         "refs/tags/$latest_tag:refs/tags/$latest_tag"
-    manifest_version=$(
-        git -C "$path" show "$latest_tag:Cargo.toml" |
-            sed -n 's/^version = "\([^"]*\)"/\1/p' |
-            head -n 1
-    )
+    if [ "$component" = bbcat-sushi ]; then
+        manifest_version=$(git -C "$path" show "$latest_tag:VERSION")
+    else
+        manifest_version=$(
+            git -C "$path" show "$latest_tag:Cargo.toml" |
+                sed -n 's/^version = "\([^"]*\)"/\1/p' |
+                head -n 1
+        )
+    fi
     if [ "v$manifest_version" != "$latest_tag" ]; then
         echo "$component: $latest_tag contains version $manifest_version" >&2
         exit 1
