@@ -71,8 +71,11 @@ install -Dm755 target/bbcat-thumbnailer/release/bbcat-thumbnailer \
     "$package_root/usr/bin/bbcat-thumbnailer"
 install -Dm644 components/bbcat-gtk/dev.bbcat.GtkViewer.desktop \
     "$package_root/usr/share/applications/dev.bbcat.GtkViewer.desktop"
-install -Dm644 components/bbcat-gtk/dev.bbcat.GtkViewer.svg \
-    "$package_root/usr/share/icons/hicolor/scalable/apps/dev.bbcat.GtkViewer.svg"
+for size in 16 32 48 64 128 256 512; do
+    install -Dm644 \
+        "components/bbcat-gtk/icons/hicolor/${size}x${size}/apps/dev.bbcat.GtkViewer.png" \
+        "$package_root/usr/share/icons/hicolor/${size}x${size}/apps/dev.bbcat.GtkViewer.png"
+done
 install -Dm644 components/bbcat-gtk/bbcat.xml \
     "$package_root/usr/share/mime/packages/bbcat.xml"
 install -d "$package_root/usr/share/thumbnailers"
